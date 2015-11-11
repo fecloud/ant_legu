@@ -16,18 +16,20 @@ import java.util.UUID;
 
 import org.apache.tools.ant.BuildException;
 import org.apache.tools.ant.Task;
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 public class LeGu extends Task {
 	
 	private final Proxy proxy = new Proxy(Type.HTTP, new InetSocketAddress("127.0.0.1", 8888));
 
-	private boolean userProxy = false;
+	private boolean userProxy = true;
 
-	public static final String UPLOAD_URL = "http://legu.qq.com/data_deal/rec_app";
-	public static final String COMMIT_URL = "http://legu.qq.com/data_deal/app_tab?act=jg&id=%s&diy_msg=";
-	public static final String CHECK_URL = "http://legu.qq.com/data_deal/app_check";
-	public static final String GETDOWNLOAD_URL = "http://legu.qq.com/data_deal/app_tab?act=jg_down&id=%s";
+	public static final String UPLOAD_URL = "http://legu.qcloud.com/data/upload";
+	public static final String COMMIT_URL = "http://legu.qcloud.com/data/serve";
+	public static final String CHECK_URL = "http://legu.qcloud.com/myapp/index";
+	public static final String GETDOWNLOAD_URL = "http://legu.qcloud.com/data/download?flag=downloadApp&id=%s";
+	public static final String TDOWNLOAD_URL = "http://legu.qcloud.com/data/download?flag=downloadApp&id=%s";
 	
 	public static final int APPCHEKCOUNT = 24;
 	public static final int APPCHEKCOUNT_TIME = 5000;
@@ -91,50 +93,28 @@ public class LeGu extends Task {
 
 		System.out.println("输入出件" + output);
 
+		System.out.println("=================================");
 		System.out.println("上传文件中...");
 		uploadFile();
 		System.out.println("上传文件完成");
 		
+		System.out.println("=================================");
 		System.out.println("提交加密中...");
 		commitJiaMi();
 		System.out.println("提交加密完成");
 		
-		try {
-			Thread.sleep(APPCHEKCOUNT_TIME);
-		} catch (InterruptedException e) {
-		}
-		boolean complteJiaMi = false;
-		for(int i = 0 ;i <APPCHEKCOUNT;i++) {
-			System.out.println("检查加密中...");
-			final CheckResult result = appCheck();
-			if (result != null) {
-				if (result.getRes().equalsIgnoreCase("ing")) {
-					System.out.println("加密等待" + (APPCHEKCOUNT_TIME / 1000) + "秒");
-					try {
-						Thread.sleep(APPCHEKCOUNT_TIME);
-					} catch (InterruptedException e) {
-					}
-				} else if(result.resIsOK()) {
-					complteJiaMi = true;
-					break;
-				}
-			}
-		}
-		
-		if(!complteJiaMi) {
-			throw new BuildException("服务器检查加密错误");
-		}
+		System.out.println("=================================");
+		checkJiaMi();
+		System.out.println("检查加密完成");
+
 		System.out.println("服务器加密完成");
+
+		System.out.println("=================================");
+		System.out.println("下载加固文件中...");
+		downloadApk(String.format(TDOWNLOAD_URL, uploadResult.getMd5()));
+		System.out.println("下载加固文件完成");
 		
-		System.out.println("提交加密中...");
-		String downloadUrl = getDownloadUrl();
-		if (null != downloadUrl) {
-			System.out.println("加密后的apk下载地址：" + downloadUrl);
-		} else {
-			throw new BuildException("加密后的apk下载地址错误");
-		}
-		
-		downloadApk(downloadUrl);
+		System.out.println("=================================");
 		System.out.println("乐固加密成功");
 
 		super.execute();
@@ -178,8 +158,16 @@ public class LeGu extends Task {
 
 			out.write(("------" + splitString).getBytes("UTF-8"));
 			out.write("\r\n".getBytes("UTF-8"));
+			out.write("Content-Disposition: form-data; name=\"Filename\"".getBytes("UTF-8"));
+			out.write("\r\n".getBytes("UTF-8"));
+			out.write("\r\n".getBytes("UTF-8"));
+			out.write(new File(input).getName().getBytes("UTF-8"));
+			out.write("\r\n".getBytes("UTF-8"));
+			
+			out.write(("------" + splitString).getBytes("UTF-8"));
+			out.write("\r\n".getBytes("UTF-8"));
 			out.write(String
-					.format("Content-Disposition: form-data; name=\"deal_app\"; filename=\"%s\"",
+					.format("Content-Disposition: form-data; name=\"app\"; filename=\"%s\"",
 							new File(input).getName()).getBytes("UTF-8"));
 			out.write("\r\n".getBytes("UTF-8"));
 			out.write("Content-Type: application/octet-stream"
@@ -194,17 +182,18 @@ public class LeGu extends Task {
 			System.out.println("发送文件内容中...");
 			while (-1 != (len = fileInputStream.read(buffer))) {
 				out.write(buffer, 0, len);
+				out.flush();
 			}
 
 			out.write("\r\n".getBytes("UTF-8"));
 			out.write(("------" + splitString).getBytes("UTF-8"));
 			out.write("\r\n".getBytes("UTF-8"));
-			out.write("Content-Disposition: form-data; name=\"win_flag\""
+			out.write("Content-Disposition: form-data; name=\"Upload\""
 					.getBytes("UTF-8"));
 			out.write("\r\n".getBytes("UTF-8"));
 			out.write("\r\n".getBytes("UTF-8"));
 			
-			out.write("jg".getBytes("UTF-8"));
+			out.write("Submit Query".getBytes("UTF-8"));
 			out.write("\r\n".getBytes("UTF-8"));
 			out.write(("------" + splitString).getBytes("UTF-8"));
 			out.write("--".getBytes("UTF-8"));
@@ -222,20 +211,13 @@ public class LeGu extends Task {
 
 				System.out.println(resultString);
 				final JSONObject json = new JSONObject(resultString);
-				if (json.has("res")) {
-					String res = json.getString("res");
-					if (res != null && res.trim().equals("login")) {
-						System.out.println("必须登录");
-						throw new Exception("cookie不对了");
-					} else {
-						uploadResult = new UploadResult();
-						uploadResult.fromJSON(json);
-						if (uploadResult.resIsOK()){
-							System.out.println("上传apkd成功");
-						} else {
-							throw new Exception("上传apk错误");
-						}
-					}
+	
+				uploadResult = new UploadResult();
+				uploadResult.fromJSON(json);
+				if (uploadResult.isOK()){
+					System.out.println("上传apk成功");
+				} else {
+					throw new Exception("上传apk错误");
 				}
 
 			} else {
@@ -253,28 +235,29 @@ public class LeGu extends Task {
 	private void commitJiaMi() throws BuildException {
 		if (null != uploadResult) {
 			try {
-				String address = String
-						.format(COMMIT_URL, uploadResult.getId());
 				HttpURLConnection conn = null;
 
 				if (userProxy) {
-					conn = (HttpURLConnection) new URL(address)
+					conn = (HttpURLConnection) new URL(COMMIT_URL)
 							.openConnection(proxy);
 				} else {
-					conn = (HttpURLConnection) new URL(address)
+					conn = (HttpURLConnection) new URL(COMMIT_URL)
 							.openConnection();
 				}
 
 				conn.setConnectTimeout(10000);
 				conn.setReadTimeout(10000);
-				conn.setRequestMethod("GET");
+				conn.setRequestMethod("POST");
 				conn.setDoInput(true);
-				conn.setDoOutput(false);
+				conn.setDoOutput(true);
 				conn.setRequestProperty("Accept", Accept);
 				conn.setRequestProperty("Accept-Language", Accept_Language);
 				conn.setRequestProperty("X-Requested-With", X_Requested_With);
 				conn.setRequestProperty("User-Agent", USER_AGENT);
 				conn.setRequestProperty("Cookie", readText(cookie));
+				
+				conn.getOutputStream().write(String.format("flag=serveBox&md5=%s&sec=1&monitor=0&jiagu=1", uploadResult.getMd5()).getBytes("UTF-8"));
+				conn.getOutputStream().flush();
 				
 				if (conn.getResponseCode() == 200) {
 					System.out.println("提交加密返回200");
@@ -285,20 +268,13 @@ public class LeGu extends Task {
 
 					System.out.println(resultString);
 					final JSONObject json = new JSONObject(resultString);
-					if (json.has("res")) {
-						String res = json.getString("res");
-						if (res != null && res.trim().equals("login")) {
-							System.out.println("必须登录");
-							throw new Exception("cookie不对了");
-						} else {
-							commitResult = new CommitResult();
-							commitResult.fromJSON(json);
-							if (commitResult.resIsOK()){
-								System.out.println("提交加密apk成功");
-							} else {
-								throw new Exception("提交加密apk错误");
-							}
-						}
+			
+					commitResult = new CommitResult();
+					commitResult.fromJSON(json);
+					if (commitResult.isOK()){
+						System.out.println("提交加密apk成功");
+					} else {
+						throw new Exception("提交加密apk错误");
 					}
 
 				} else {
@@ -310,6 +286,34 @@ public class LeGu extends Task {
 				throw new BuildException("commitJiaMi error\n" + e.getMessage(), e);
 			}
 		}
+	}
+	
+	private void checkJiaMi() throws BuildException {
+
+		boolean complteJiaMi = false;
+		for (int i = 0; i < APPCHEKCOUNT; i++) {
+			try {
+				Thread.sleep(APPCHEKCOUNT_TIME);
+			} catch (InterruptedException e) {
+			}
+			System.out.println("检查加密中...");
+			final CheckResult result = appCheck();
+			if (result != null) {
+				if (result.getState() != 0) {
+					System.out.println("加密等待" + (APPCHEKCOUNT_TIME / 1000)
+							+ "秒");
+					
+				} else {
+					complteJiaMi = true;
+					break;
+				}
+			}
+		}
+
+		if (!complteJiaMi) {
+			throw new BuildException("服务器检查加密错误");
+		}
+
 	}
 	
 	private CheckResult appCheck() {
@@ -335,28 +339,29 @@ public class LeGu extends Task {
 			conn.setRequestProperty("Cookie", readText(cookie));
 
 			final OutputStream out = conn.getOutputStream();
-			out.write(String.format("act=jg&id=%s", uploadResult.getId())
-					.getBytes("UTF-8"));
+			out.write("flag=ajaxData".getBytes("UTF-8"));
 			out.flush();
 
 			if (conn.getResponseCode() == 200) {
 				System.out.println("检查加密返回200");
 				final String resultString = read(conn.getInputStream());
 				if (resultString == null || resultString.trim().length() == 0) {
-					throw new Exception("读取响应错误");
+					throw new BuildException("读取响应错误");
 				}
 
-				System.out.println(resultString);
-				final JSONObject json = new JSONObject(resultString);
-				if (json.has("res")) {
-					String res = json.getString("res");
-					if (res != null && res.trim().equals("login")) {
-						System.out.println("必须登录");
-						throw new Exception("cookie不对了");
-					} else {
+				final JSONArray json = new JSONArray(resultString);
+
+				JSONObject object = null;
+				if (null != json && json.length() > 0) {
+					for (int i = 0; i < json.length(); i++) {
+						object = json.getJSONObject(i);
+						System.out.println(object.toString());
 						final CheckResult checkResult = new CheckResult();
-						checkResult.fromJSON(json);
-						return checkResult;
+						checkResult.fromJSON(object);
+						
+						if (uploadResult.getMd5().equalsIgnoreCase(checkResult.getMd5())) {
+							return checkResult;
+						}
 					}
 				}
 
@@ -366,7 +371,7 @@ public class LeGu extends Task {
 			}
 
 		} catch (Exception e) {
-			throw new BuildException("commitJiaMi error\n" + e.getMessage(), e);
+			throw new BuildException("appCheck error\n" + e.getMessage(), e);
 		}
 		return null;
 	}
@@ -374,16 +379,16 @@ public class LeGu extends Task {
 	/**
 	 * 返回加密后的地址
 	 * @return
-	 */
+	 
 	private String getDownloadUrl() {
 		try {
 			HttpURLConnection conn = null;
 
 			if (userProxy) {
-				conn = (HttpURLConnection) new URL(String.format(GETDOWNLOAD_URL, uploadResult.getId()))
+				conn = (HttpURLConnection) new URL(String.format(GETDOWNLOAD_URL,uploadResult.getMd5()))
 						.openConnection(proxy);
 			} else {
-				conn = (HttpURLConnection) new URL(String.format(GETDOWNLOAD_URL, uploadResult.getId())).openConnection();
+				conn = (HttpURLConnection) new URL(String.format(GETDOWNLOAD_URL,uploadResult.getMd5())).openConnection();
 			}
 
 			conn.setConnectTimeout(10000);
@@ -413,12 +418,13 @@ public class LeGu extends Task {
 		} catch (Exception e) {
 			throw new BuildException("getDownloadUrl error\n" + e.getMessage(), e);
 		}
-	}
+	}*/
 	
 	private void downloadApk(String address){
 		try {
 			HttpURLConnection conn = null;
 
+			System.out.println("下载地址:" + address);
 			if (userProxy) {
 				conn = (HttpURLConnection) new URL(address)
 						.openConnection(proxy);
@@ -436,7 +442,6 @@ public class LeGu extends Task {
 			conn.setRequestProperty("X-Requested-With", X_Requested_With);
 			conn.setRequestProperty("User-Agent", USER_AGENT);
 			conn.setRequestProperty("Cookie", readText(cookie));
-			conn.setInstanceFollowRedirects(false);
 
 			if (conn.getResponseCode() == 200) {
 				//
@@ -468,7 +473,7 @@ public class LeGu extends Task {
 			}
 
 		} catch (Exception e) {
-			throw new BuildException("getDownloadUrl error\n" + e.getMessage(), e);
+			throw new BuildException("downloadApk error\n" + e.getMessage(), e);
 		}
 	}
 	
