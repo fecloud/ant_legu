@@ -23,7 +23,7 @@ public class LeGu extends Task {
 	
 	private final Proxy proxy = new Proxy(Type.HTTP, new InetSocketAddress("127.0.0.1", 8888));
 
-	private boolean userProxy = true;
+	private boolean userProxy = false;
 
 	public static final String UPLOAD_URL = "http://legu.qcloud.com/data/upload";
 	public static final String COMMIT_URL = "http://legu.qcloud.com/data/serve";
@@ -91,7 +91,7 @@ public class LeGu extends Task {
 			throw new BuildException("Missing attribute output");
 		}
 
-		System.out.println("输入出件" + output);
+		System.out.println("输入出文件" + output);
 
 		System.out.println("=================================");
 		System.out.println("上传文件中...");
@@ -210,13 +210,20 @@ public class LeGu extends Task {
 				}
 
 				System.out.println(resultString);
+				if (resultString.startsWith("{\"code\":\"login\"")) {
+					throw new Exception("请登录 http://legu.qcloud.com");
+				}
+				
 				final JSONObject json = new JSONObject(resultString);
 	
-				uploadResult = new UploadResult();
-				uploadResult.fromJSON(json);
-				if (uploadResult.isOK()){
-					System.out.println("上传apk成功");
-				} else {
+				if (null != json && json.has("code")){
+					uploadResult = new UploadResult();
+					uploadResult.fromJSON(json);
+					if (uploadResult.isOK()){
+						System.out.println("上传apk成功");
+					} 
+					
+				}else {
 					throw new Exception("上传apk错误");
 				}
 
